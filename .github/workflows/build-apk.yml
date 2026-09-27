@@ -1,0 +1,97 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_zip:
+        description: "Android project ZIP"
+        required: true
+        default: "SpecBoard.zip"
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Android project
+        run: |
+          mkdir -p project
+          unzip -q "${{ github.event.inputs.project_zip }}" -d project
+
+          echo "Extracted files:"
+          find project -maxdepth 3 -type f | head -100
+
+      - name: Locate Gradle project
+        id: locate
+        shell: bash
+        run: |
+          SETTINGS=$(find project -name settings.gradle -o -name settings.gradle.kts | head -1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: No settings.gradle or settings.gradle.kts found."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Project directory: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" \
+                     "platforms;android-35" \
+                     "build-tools;35.0.0"
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Generate Gradle wrapper if missing
+        working-directory: ${{ steps.locate.outputs.project_dir }}
+        run: |
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper
+          fi
+
+          chmod +x ./gradlew
+
+      - name: Build Debug APK
+        working-directory: ${{ steps.locate.outputs.project_dir }}
+        run: |
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Find APK
+        id: apk
+        working-directory: ${{ steps.locate.outputs.project_dir }}
+        run: |
+          APK=$(find . -path "*/build/outputs/apk/debug/*.apk" -type f | head -1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK found: $APK"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpecBoard-debug-apk
+          path: ${{ steps.locate.outputs.project_dir }}/${{ steps.apk.outputs.apk_path }}
+          if-no-files-found: error
