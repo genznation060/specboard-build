@@ -46,28 +46,29 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools'   # avoid the removed 'tools' package
+          packages: 'platform-tools'
 
       - name: Install required SDK packages
         run: |
           sdkmanager --install \
             "platforms;android-35" \
             "build-tools;35.0.0"
-          # Accept licenses non-interactively
           yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Install Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
+        # Do NOT force an old version – let the project's wrapper decide
 
-      - name: Generate Gradle wrapper if missing
+      - name: Make gradlew executable
         working-directory: ${{ steps.locate.outputs.project_dir }}
         run: |
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          else
+            echo "No gradlew found – generating wrapper with Gradle 9.3.1"
+            gradle wrapper --gradle-version 9.3.1
+            chmod +x ./gradlew
           fi
-          chmod +x ./gradlew
 
       - name: Build Debug APK
         working-directory: ${{ steps.locate.outputs.project_dir }}
